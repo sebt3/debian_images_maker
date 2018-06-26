@@ -1,0 +1,319 @@
+#!/bin/bash
+# BSD 3-Clause License
+# 
+# Copyright (c) 2018, Sébastien Huss
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+# * Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
+# 
+# * Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+# 
+# * Neither the name of the copyright holder nor the names of its
+#   contributors may be used to endorse or promote products derived from
+#   this software without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+##############################################################################
+### Configure bashlibs
+##
+ARGS_info="dim: Debian image maker"
+BASE_dir=${BASE_dir:-"$(cd "$(dirname $0)";pwd)"}
+CONF_dir=${CONF_dir:-"$BASE_dir/conf"}
+CFG_file=${CFG_file:-"$CONF_dir/dim.conf"}
+OUT_level=${OUT_level:-ALL}
+LOG_level=${LOG_level:-NONE}
+SHLIBDIR=${SHLIBDIR:-"${BASE_dir}/bashlibs"}
+. $SHLIBDIR/core.lib.bash
+. $SHLIBDIR/task.lib.bash
+OUT_color[$(out.levelID STDERR)]=""
+TEMPLATE_dir=${TEMPLATE_dir:-"$BASE_dir/templates"}
+DEVICES_dir=${DEVICES_dir:-"$BASE_dir/devices"}
+
+##############################################################################
+### Read the config
+##
+DIST=${DIST:-"$(cfg.get DIST)"};		DIST=${DIST:-"buster"}
+MIRROR=${MIRROR:-"$(cfg.get MIRROR)"};		MIRROR=${MIRROR:-"http://cdn-fastly.deb.debian.org/debian"}
+DEVICE=${DEVICE:-"$(cfg.get DEVICE)"};		DEVICE=${DEVICE:-"kvm"}
+TMPLT=${TMPLT:-"$(cfg.get TEMPLATE)"};		TMPLT=${TMPLT:-"none"}
+IMAGEDIR=${IMAGEDIR:-"$(cfg.get IMAGEDIR)"};	IMAGEDIR=${IMAGEDIR:-"$BASE_dir/images"}
+BASEROOT=${BASEROOT:-"$(cfg.get BASEROOT)"};	BASEROOT=${BASEROOT:-"$BASE_dir/rootfs"}
+
+PASS=${PASS:-"password"}
+HNAME=${HNAME:-"defaulthost"}
+DEVICE_LOADED=0
+TEMPLATE_LOAD=0
+##############################################################################
+### Arguments management
+##
+
+ACT=${ACT:-"create"}
+args.pre() {
+	local i v=$1;shift
+	for (( i=0; i<${#ARGS_vars[@]}; i++ ));do
+		if [[ ${ARGS_vars[$i]} == "ACT" ]];then
+			ARGS_mandatory[$i]="N"
+		fi
+	done
+	args.option.declare DEVICE -d --device		  NotMandatory Y "Target device type		(DEFAULT: $DEVICE)"
+	args.option.declare TMPLT  -t --template	  NotMandatory Y "Template to use for the image(DEFAULT: $TMPLT)"
+	args.declare DIST	-D --dist   Vals NoOption NotMandatory   "Debian disribution		(DEFAULT: $DIST)"
+	args.declare MIRROR	-M --mirror Vals NoOption NotMandatory   "Debian mirror		(DEFAULT: $MIRROR)"
+	args.declare HNAME   -H --hostname  Vals NoOption NotMandatory   "Hostname			(DEFAULT: $HNAME)"
+	args.declare PASS    -p --password  Vals NoOption NotMandatory   "root password 		(DEFAULT: $PASS)"
+	devices.init
+	templates.init
+}
+args.post() {
+	[ $TEMPLATE_LOAD -eq 0 ] && [ ! -z $TMPLT  ] && [ -f "${TEMPLATE_dir}/${TMPLT}.sh" ] && templates.load $TMPLT
+	[ $DEVICE_LOADED -eq 0 ] && [ ! -z $DEVICE ] && [ -f "${DEVICES_dir}/${DEVICE}.sh" ] &&   devices.load $DEVICE
+	OSROOT="$BASEROOT/$HNAME"
+}
+
+##############################################################################
+### Devices
+##
+devices.list() {
+	local f i
+	[ $(ls -1a "$DEVICES_dir/"*sh 2>/dev/null|wc -l) -lt 1 ] && return 0
+	for i in "$DEVICES_dir/"*sh;do f=${i##*/};echo ${f%.sh}; done
+}
+devices.load() {
+	local post=${2:-0}
+	[ ! -f "${DEVICES_dir}/${1}.sh" ] && return 1
+	. "${DEVICES_dir}/${1}.sh"
+	DEVICE_LOADED=1
+	is.function image.load && act.add.post load "Load the image"
+	return 0
+}
+devices.init() {
+	for tmp in $(devices.list);do 
+		args.option DEVICE "$tmp" "$(awk '/#@DESC@/{gsub("#@DESC@","");print}' <$DEVICES_dir/${tmp}.sh)"
+	done
+	args.callback DEVICE devices.load
+}
+
+# each device template have to define :
+# ARCH
+# and any of theses "activity" functions : setup.device, image.prepare, image.install, image.finish, image.load
+
+##############################################################################
+### Templates
+##
+templates.list() {
+	local f i
+	[ $(ls -1a "$TEMPLATE_dir/"*sh 2>/dev/null|wc -l) -lt 1 ] && return 0
+	for i in "$TEMPLATE_dir/"*sh;do f=${i##*/};echo ${f%.sh}; done
+}
+templates.load() {
+	[ ! -f "${TEMPLATE_dir}/${1}.sh" ] && return 1
+	. "${TEMPLATE_dir}/${1}.sh"
+	TEMPLATE_LOAD=1
+	return 0
+}
+templates.init() {
+	for tmp in $(templates.list);do 
+		args.option TMPLT "$tmp" "$(awk '/#@DESC@/{gsub("#@DESC@","");print}' <$TEMPLATE_dir/${tmp}.sh)"
+	done
+	args.callback TMPLT templates.load
+}
+
+# each templates have to define :
+# OSSIZE
+# and add to TEMPLATES+=()
+
+##############################################################################
+### varia
+##
+
+is.root() {
+	[ $(id -u) -eq 0 ]
+}
+precheck.root() {
+	if ! is.root;then
+		out.error "> You have to be *root* to run this <"
+		return 1
+	fi
+}
+
+image.chroot() {
+	LANG=C chroot "$OSROOT" "$@"
+}
+
+apt.key() {
+	APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=yes image.chroot apt-key add -
+}
+apt.install() {
+	DEBIAN_FRONTEND=noninteractive image.chroot apt-get -y install "$@"
+}
+
+net.file() {
+	local tgt=$1 file=$2
+	net.run "$tgt"  "tee '$file'" >/dev/null
+}
+net.get() {
+	local tgt=$1 file=$2
+	net.run "$tgt"  "cat '$file'"
+}
+
+
+##############################################################################
+### Setup
+##
+
+setup() {
+	if [ $DEVICE_LOADED -eq 0 ];then
+		out.error "Device $DEVICE unknown"
+		exit 1
+	fi
+	task.add precheck.root			"Verify that we're running as root"
+	task.add setup.makekey			"Create a ssh public key if needed"
+	task.add setup.baseInstall		"Install debootstrap and some utilities"
+	is.function setup.device && setup.device
+}
+act.add setup "Setup the system to build images"
+
+setup.baseInstall() {
+	out.cmd apt-get -y install file qemu-utils debootstrap coreutils
+}
+
+setup.makekey.precheck() {	precheck.root; }
+setup.makekey() {
+	[ -f "$HOME/.ssh/id_rsa.pub" ] && return 0
+	echo -e "\n\n\n" |ssh-keygen
+}
+setup.makekey.verify() {
+	if [ ! -f "$HOME/.ssh/id_rsa.pub" ];then
+		out.error "The key failed to create somehow"
+		return 1
+	fi
+	task.verify 
+}
+
+##############################################################################
+### Create
+##
+
+TEMPLATES=()
+create() {
+	local i
+	if [ $DEVICE_LOADED -eq 0 ];then
+		out.error "Device $DEVICE unknown"
+		exit 1
+	fi
+	is.function image.prepare && image.prepare
+	task.add create.bootstrap	"Bootstrap the debian installation"
+	task.add create.config		"Configure the installation"
+	task.add create.mountsub	"Mount the virtuals filesystems for the chroot"
+	is.function image.install && image.install
+	task.add create.passwd		"Set the root password"
+	for ((i=0;i<${#TEMPLATES[@]};i++));do
+		if is.function "${TEMPLATES[$i]}";then
+			${TEMPLATES[$i]}
+		fi
+	done
+	task.add create.umountsub	"Umount virtuals filesystems"
+	task.add create.clean		"Cleanup the image"
+	is.function image.finish  && image.finish
+}
+act.add create "Create an image"
+
+create.bootstrap() {
+	if [ -f "$OSROOT/var/lib/dpkg/status" ];then
+		if [ $(grep -c "Package: apt" "$OSROOT/var/lib/dpkg/status") -lt 1 ];then
+			out.error "A dpkg status file was found but it dont have apt installed"
+			out.error "You should probably flush that directory ($OSROOT) and retry"
+			return 1
+		fi
+		if [ $(grep Status "$OSROOT/var/lib/dpkg/status"|sort -u|wc -l) -ne 1 ];then
+			out.error "There are some invalid dpkg status ($OSROOT)"
+			return 2
+		fi
+		out.info "The existing rootfs looks sane"
+		return 0
+		
+	fi
+	#--variant=minbase 
+	out.cmd debootstrap "--arch=$ARCH" "$DIST" "$OSROOT" "$MIRROR"
+}
+create.config() {
+	echo "LANG=\"C\"">"$OSROOT/etc/default/locale"
+	mkdir -p "$OSROOT/etc/network/interfaces.d"
+	echo "$HNAME">"$OSROOT/etc/hostname"
+	cat <<EOF > "$OSROOT/etc/hosts"
+127.0.0.1       ${HNAME} localhost
+# The following lines are desirable for IPv6 capable hosts
+::1     localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+EOF
+	cat <<EOF > "$OSROOT/etc/network/interfaces"
+auto lo
+iface lo inet loopback
+
+source-directory /etc/network/interfaces.d
+EOF
+}
+create.passwd() {
+	echo -e "$PASS\n$PASS"|chroot "$OSROOT" passwd 2>&1
+	mkdir -p "$OSROOT/root/.ssh"
+	chmod 700 "$OSROOT/root/.ssh"
+	cp "$HOME/.ssh/id_rsa.pub" "$OSROOT/root/.ssh/authorized_keys"
+}
+create.mountsub() {
+	if mount|awk -vR=0 "-vP=$OSROOT" '$3==P"/dev"{R=1}END{exit R}' && ! mount --bind /dev/ "$OSROOT/dev";then
+		out.error "Failed to bind-mount /dev"
+		return 1
+	fi
+	if mount|awk -vR=0 "-vP=$OSROOT" '$3==P"/proc"{R=1}END{exit R}' && ! chroot "$OSROOT" mount -t proc none /proc;then
+		out.error "Failed to mount /proc"
+		return 2
+	fi
+	if mount|awk -vR=0 "-vP=$OSROOT" '$3==P"/sys"{R=1}END{exit R}' && ! chroot "$OSROOT" mount -t sysfs none /sys;then
+		out.error "Failed to mount /sys"
+		return 3
+	fi
+	return 0
+}
+create.umountsub() {
+	mount|awk -vR=0 "-vP=$OSROOT" '$3==P"/dev"{R=1}END{exit R}' || umount "$OSROOT/dev"
+	mount|awk -vR=0 "-vP=$OSROOT" '$3==P"/proc"{R=1}END{exit R}' || umount "$OSROOT/proc"
+	mount|awk -vR=0 "-vP=$OSROOT" '$3==P"/sys"{R=1}END{exit R}' || umount "$OSROOT/sys"
+}
+create.clean() {
+	LANG=C chroot "$OSROOT" apt-get clean
+	find "$OSROOT/var/log/" -type f -exec rm {} \;
+	rm -f "$OSROOT/var/lib/apt/lists/"*Packages  "$OSROOT/var/cache/debconf/"*-old
+	rm -rf "$OSROOT/tmp/"* "$OSROOT/var/cache/apt/archives/"*
+	#rm -rf "$OSROOT/usr/share/doc/"* "$OSROOT/usr/share/man/"* "$OSROOT/usr/share/locale/"*  "$OSROOT/usr/share/info/"* 
+}
+
+##############################################################################
+### Image loading
+##
+load() {
+	is.function image.load && image.load
+}
+
+
+##############################################################################
+### Run the script
+##
+
+act.script "$@"
