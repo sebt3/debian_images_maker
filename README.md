@@ -19,7 +19,6 @@ dim [ACT]
 -M|--mirror MIRROR       : Debian mirror                (DEFAULT: http://192.168.6.13:3142/debian)
 -H|--hostname HNAME      : Hostname                     (DEFAULT: defaulthost)
 -p|--password PASS       : root password                (DEFAULT: password)
--T|--target TARGET       : The device to flash to       (DEFAULT: /dev/sdb)
 
 Available values for ACT (Select the activity to run):
 setup                    : Setup the system to build images
@@ -28,6 +27,7 @@ load                     : Load the image
 
 Available values for DEVICE (Target device type         (DEFAULT: rock64)):
 kvm                      : KVM vm images templates
+nanopc4                  : Nano-PC T4 (www.friendlyarm.com) images
 pyra                     : Pyra (pyra-handheld.com) images
 rock64                   : Rock64 (www.pine64.org) images
 
