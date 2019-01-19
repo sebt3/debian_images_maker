@@ -30,6 +30,13 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+# Flashing : 
+# http://wiki.friendlyarm.com/wiki/index.php/NanoPC-T4#Flash_Image_to_eMMC_under_Linux_with_Type-C_Cable
+# for i in 12 13 14 15 16;do $dim -t infra -d nanopc4 -H "nano$i" -i "$i";done
+# i=16;nanopc_upgrade_tool di -p parameter.txt;nanopc_upgrade_tool di kernel kernel.img;nanopc_upgrade_tool di rootfs /mnt/virtual/machines/nano${i}.img;nanopc_upgrade_tool RD
+
+
+
 ##############################################################################
 ### Arguments
 ##
@@ -96,7 +103,7 @@ install.base.precheck() {	precheck.root; }
 install.base.verify() { task.verify.permissive; }
 install.base() {
 	apt.install gnupg2
-	apt.install vim openssh-server net-tools iw rfkill wpasupplicant alsa-utils ifupdown resolvconf pciutils ethtool dnsutils vlan
+	apt.install vim openssh-server net-tools iw rfkill wpasupplicant alsa-utils ifupdown resolvconf pciutils ethtool dnsutils vlan  apt-transport-https
 }
 install.config() {
 	cat <<EOF > "$OSROOT/etc/network/interfaces.d/eth0"
@@ -111,6 +118,13 @@ iface eth0.100 inet static
   address ${VLAN}.$LIP
   netmask 255.255.255.0
 EOF
+	cat >"$OSROOT/root/.bashrc" <<ENDF
+export LS_OPTIONS='--color=auto'
+eval "`dircolors`"
+alias ls='ls \$LS_OPTIONS'
+alias ll='ls \$LS_OPTIONS -l'
+
+ENDF
 }
 
 ##############################################################################

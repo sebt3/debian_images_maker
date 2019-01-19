@@ -178,7 +178,6 @@ prepare.mount() {
 image.install() {
 	task.add install.kernel		"Install the kernel and base tools"
 	task.add install.config		"Configure the network"
-	task.add install.grub		"Install grub"
 }
 
 install.kernel.precheck() {	precheck.root; }
@@ -199,9 +198,23 @@ domain private
 search private
 nameserver ${VLAN}.1
 EOF
+	cat <<EOF > "$OSROOT/etc/hosts"
+127.0.0.1       localhost
+${VLAN}.$LIP	${HNAME} ${HNAME%%.*}
+# The following lines are desirable for IPv6 capable hosts
+::1     localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+EOF
+
 }
 
-install.grub() {
+image.postinstall() {
+	task.add post.grub		"Install grub"
+}
+
+post.grub() {
+	sed -i "s| ro | rw |g" "$OSROOT/etc/grub.d/10_linux"
 	if ! image.chroot grub-install "$DISK" 2>&1;then
 		out.error "Failed to install grub"
 		return 1

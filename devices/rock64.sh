@@ -100,6 +100,13 @@ install.kernel() {
 install.config() {
 	echo "Pine64 Rock64" > "$OSROOT/etc/flash-kernel/machine"
 	echo "LABEL=boot /boot/efi vfat defaults,sync 0 0" > "$OSROOT/etc/fstab"
+	cat >"$OSROOT/root/.bashrc" <<ENDF
+export LS_OPTIONS='--color=auto'
+eval "`dircolors`"
+alias ls='ls \$LS_OPTIONS'
+alias ll='ls \$LS_OPTIONS -l'
+
+ENDF
 	cat <<EOF > "$OSROOT/etc/network/interfaces.d/eth0"
 auto eth0
 allow-hotplug eth0

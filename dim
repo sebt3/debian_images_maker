@@ -228,6 +228,7 @@ create() {
 			${TEMPLATES[$i]}
 		fi
 	done
+	is.function image.postinstall && image.postinstall
 	task.add create.umountsub	"Umount virtuals filesystems"
 	task.add create.clean		"Cleanup the image"
 	is.function image.finish  && image.finish
@@ -310,7 +311,7 @@ create.clean() {
 load() {
 	is.function image.load && image.load
 }
-
+act.add load "Load the image"
 
 ##############################################################################
 ### Run the script

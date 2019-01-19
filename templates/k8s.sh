@@ -32,7 +32,7 @@
 
 MASTER=${MASTER:-"kubemaster"}
 DOCKER_LOAD_CUSTOM=no templates.load docker
-
+KUBE_VERSION=1.11.2
 kb.crictl() {
 	curl -s -L "https://github.com/kubernetes-incubator/cri-tools/releases/download/v1.0.0-alpha.0/crictl-v1.0.0-alpha.0-linux-${ARCH}.tar.gz" |tar zx -C "$OSROOT/usr/bin"
 }
@@ -43,7 +43,9 @@ kb.install() {
 	curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt.key
 	image.chroot apt-get update
 	#apt.install kubectl=1.9.8-00 kubeadm=1.9.8-00 kubelet=1.9.8-00 jq ca-certificates gnupg2 ebtables ethtool uuid-runtime
-	apt.install kubectl kubeadm kubelet jq ca-certificates gnupg2 ebtables ethtool
+	apt.install kubectl=${KUBE_VERSION}-00 kubelet=${KUBE_VERSION}-00 kubeadm jq ca-certificates gnupg2 ebtables ethtool
+	#apt.install kubectl kubelet kubeadm jq ca-certificates gnupg2 ebtables ethtool
+	#image.chroot apt-mark hold kubectl kubelet
 }
 kb.bridge() {
 	echo "net.bridge.bridge-nf-call-iptables=1
@@ -73,7 +75,7 @@ setupm.enable() {
 	systemctl enable kubelet && systemctl start kubelet
 }
 setupm.flannel() {
-	kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/v0.9.1/Documentation/kube-flannel.yml
+	kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
 }
 setupmaster() {
 	task.add	  setupm.init		"Initialize the kube infrastructure"

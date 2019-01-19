@@ -30,13 +30,20 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-ceph.install.verify() { task.verify.permissive; }
+ceph.install.verify() { task.verify.rc; }
 ceph.install() {
-	echo "deb http://eu.ceph.com/debian-luminous/ stretch main" >"$OSROOT/etc/apt/sources.list.d/ceph.list"
-	curl -s "https://git.ceph.com/?p=ceph.git;a=blob_plain;f=keys/release.asc" | apt.key
+	if [[ "$ARCH" = "amd64" ]];then
+		echo "deb http://eu.ceph.com/debian-luminous/ xenial main" >"$OSROOT/etc/apt/sources.list.d/ceph.list"
+		curl -s "https://git.ceph.com/?p=ceph.git;a=blob_plain;f=keys/release.asc" | apt.key
+	else
+		echo "deb http://sebt3.github.io/packages stretch main" >"$OSROOT/etc/apt/sources.list.d/ceph.list"
+		curl -s "https://sebt3.github.io/packages/PUBLIC.KEY" | apt.key
+		apt.install apt-transport-https
+	fi
 	image.chroot apt-get update
+	mkdir -p "$OSROOT/run/uuidd"
 	#LANG=C chroot "$MP" systemctl unmask lvm2-lvmetad.socket lvm2-lvmpolld.socket
-	apt.install ceph-mds ceph-mgr ceph-osd ceph-mon
+	apt.install rbd-nbd ceph-mds ceph-osd ceph-mon ceph-mgr python-pip
 }
 ceph.tasks() {
 	task.add ceph.install	"Install ceph"

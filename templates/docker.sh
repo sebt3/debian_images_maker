@@ -40,10 +40,11 @@ docker.base() {
 }
 docker.install.verify() { task.verify.permissive; }
 docker.install() {
-	echo "deb https://download.docker.com/linux/debian buster test" >"$OSROOT/etc/apt/sources.list.d/docker.list"
+	echo "deb https://download.docker.com/linux/debian stretch test" >"$OSROOT/etc/apt/sources.list.d/docker.list"
 	curl -s https://download.docker.com/linux/ubuntu/gpg | apt.key
 	image.chroot apt-get update
-	apt.install docker-ce docker-compose
+	apt.install docker-ce=18.06.1~ce~3-0~debian docker-compose
+	image.chroot apt-mark hold docker-ce
 	image.chroot systemctl enable docker
 }
 docker.tasks() {
